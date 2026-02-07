@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { google } from 'googleapis'
-import { GOOGLE_CALENDARS, type GoogleCalendarEvent } from '@/lib/google-calendar'
+import { getGoogleCalendars, type GoogleCalendarEvent } from '@/lib/google-calendar'
 
 // Cache for calendar events (5 minute TTL)
 let cachedEvents: GoogleCalendarEvent[] | null = null
@@ -94,7 +94,7 @@ export async function GET() {
   }
 
   // Filter out calendars without IDs configured
-  const configuredCalendars = GOOGLE_CALENDARS.filter(cal => cal.id)
+  const configuredCalendars = getGoogleCalendars().filter(cal => cal.id)
 
   if (configuredCalendars.length === 0) {
     return NextResponse.json(

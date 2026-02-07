@@ -7,44 +7,49 @@ export interface GoogleCalendarConfig {
   owner?: string // Which family member owns this calendar
 }
 
-// Calendar configuration - colors match the TV display design
-export const GOOGLE_CALENDARS: GoogleCalendarConfig[] = [
-  {
-    id: process.env.GCAL_NATE,
-    name: 'Nate',
-    color: '#3B82F6',  // Blue
-    owner: 'Nate'
-  },
-  {
-    id: process.env.GCAL_DALTON,
-    name: 'Dalton',
-    color: '#22C55E',  // Green
-    owner: 'Dalton'
-  },
-  {
-    id: process.env.GCAL_MASON,
-    name: 'Mason',
-    color: '#F97316',  // Orange
-    owner: 'Mason'
-  },
-  {
-    id: process.env.GCAL_DALTON_BASEBALL,
-    name: 'Dalton Baseball',
-    color: '#EF4444',  // Red
-    owner: 'Dalton'
-  },
-  {
-    id: process.env.GCAL_MASON_BASEBALL,
-    name: 'Mason Baseball',
-    color: '#8B5CF6',  // Purple
-    owner: 'Mason'
-  },
-  {
-    id: process.env.GCAL_FAY_FAMILY,
-    name: 'Fay Family',
-    color: '#06B6D4',  // Cyan
-  },
-]
+// Function to get calendars at runtime (not build time)
+export function getGoogleCalendars(): GoogleCalendarConfig[] {
+  return [
+    {
+      id: process.env.GCAL_NATE,
+      name: 'Nate',
+      color: '#3B82F6',  // Blue
+      owner: 'Nate'
+    },
+    {
+      id: process.env.GCAL_DALTON,
+      name: 'Dalton',
+      color: '#22C55E',  // Green
+      owner: 'Dalton'
+    },
+    {
+      id: process.env.GCAL_MASON,
+      name: 'Mason',
+      color: '#F97316',  // Orange
+      owner: 'Mason'
+    },
+    {
+      id: process.env.GCAL_DALTON_BASEBALL,
+      name: 'Dalton Baseball',
+      color: '#EF4444',  // Red
+      owner: 'Dalton'
+    },
+    {
+      id: process.env.GCAL_MASON_BASEBALL,
+      name: 'Mason Baseball',
+      color: '#8B5CF6',  // Purple
+      owner: 'Mason'
+    },
+    {
+      id: process.env.GCAL_FAY_FAMILY,
+      name: 'Fay Family',
+      color: '#06B6D4',  // Cyan
+    },
+  ]
+}
+
+// Keep this for backward compatibility but it will be empty at build time
+export const GOOGLE_CALENDARS: GoogleCalendarConfig[] = []
 
 // Type for events returned from the Google Calendar API route
 export interface GoogleCalendarEvent {
