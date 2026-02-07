@@ -1,79 +1,86 @@
 import { NextResponse } from 'next/server'
 
-// Demo weather data for Salt Lake City area
-const DEMO_WEATHER = {
-  location: 'Herriman, UT 84096',
-  current: {
-    temp: 30,
-    condition: 'Partly Cloudy',
-    icon: '❄️',
-    humidity: 71,
-    wind_speed: 2,
-    wind_direction: 'NE',
-  },
-  hourly: [
-    { time: '6 PM', temp: 28, icon: '🌤️' },
-    { time: '9 PM', temp: 27, icon: '☁️' },
-    { time: '10 PM', temp: 26, icon: '☁️' },
-    { time: '11 PM', temp: 25, icon: '🌙' },
-  ],
+// Weather locations
+const LOCATIONS = {
+  herriman: { name: 'Herriman, UT', lat: 40.5141, lon: -112.0364 },
+  stgeorge: { name: 'St. George, UT', lat: 37.0965, lon: -113.5684 },
+  mesquite: { name: 'Mesquite, NV', lat: 36.8055, lon: -114.0672 },
+  lasvegas: { name: 'Las Vegas, NV', lat: 36.1699, lon: -115.1398 },
 }
 
-// GET /api/weather - Get current weather
-export async function GET() {
-  const apiKey = process.env.OPENWEATHER_API_KEY
+// WMO Weather interpretation codes to emoji
+function getWeatherIcon(code: number, isDay: boolean): string {
+  if (code === 0) return isDay ? '☀️' : '🌙' // Clear
+  if (code <= 3) return isDay ? '🌤️' : '☁️' // Partly cloudy
+  if (code <= 49) return '🌫️' // Fog
+  if (code <= 59) return '🌧️' // Drizzle
+  if (code <= 69) return '🌧️' // Rain
+  if (code <= 79) return '❄️' // Snow
+  if (code <= 84) return '🌧️' // Rain showers
+  if (code <= 86) return '❄️' // Snow showers
+  if (code >= 95) return '⛈️' // Thunderstorm
+  return '🌡️'
+}
 
-  // If no API key, return demo weather
-  if (!apiKey) {
-    return NextResponse.json(DEMO_WEATHER)
-  }
+function getConditionText(code: number): string {
+  if (code === 0) return 'Clear'
+  if (code <= 3) return 'Partly Cloudy'
+  if (code <= 49) return 'Foggy'
+  if (code <= 59) return 'Drizzle'
+  if (code <= 69) return 'Rainy'
+  if (code <= 79) return 'Snowy'
+  if (code <= 84) return 'Rain Showers'
+  if (code <= 86) return 'Snow Showers'
+  if (code >= 95) return 'Thunderstorm'
+  return 'Unknown'
+}
+
+async function fetchWeatherForLocation(lat: number, lon: number) {
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code,is_day&hourly=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min,weather_code&temperature_unit=fahrenheit&timezone=America/Denver&forecast_days=1`
+
+  const response = await fetch(url, { next: { revalidate: 1800 } }) // Cache 30 min
+  if (!response.ok) throw new Error('Weather API error')
+  return response.json()
+}
+
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url)
+  const location = searchParams.get('location') || 'herriman'
+
+  const loc = LOCATIONS[location as keyof typeof LOCATIONS] || LOCATIONS.herriman
 
   try {
-    // Herriman, UT coordinates
-    const lat = 40.5141
-    const lon = -112.0330
+    const data = await fetchWeatherForLocation(loc.lat, loc.lon)
 
-    const response = await fetch(
-      `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&units=imperial&appid=${apiKey}`,
-      { next: { revalidate: 900 } } // Cache for 15 minutes
-    )
+    const isDay = data.current.is_day === 1
+    const currentCode = data.current.weather_code
 
-    if (!response.ok) {
-      console.error('Weather API error:', response.status)
-      return NextResponse.json(DEMO_WEATHER)
+    // Get next 4 hours
+    const now = new Date()
+    const currentHour = now.getHours()
+    const hourly = []
+
+    for (let i = 1; i <= 4; i++) {
+      const hourIndex = currentHour + i
+      if (hourIndex < 24 && data.hourly.temperature_2m[hourIndex]) {
+        const hour = new Date(now)
+        hour.setHours(hourIndex, 0, 0, 0)
+        hourly.push({
+          time: hour.toLocaleTimeString('en-US', { hour: 'numeric', hour12: true }),
+          temp: Math.round(data.hourly.temperature_2m[hourIndex]),
+          icon: getWeatherIcon(data.hourly.weather_code[hourIndex], hourIndex >= 6 && hourIndex < 18),
+        })
+      }
     }
 
-    const data = await response.json()
-
-    // Get hourly forecast
-    const forecastResponse = await fetch(
-      `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&units=imperial&cnt=4&appid=${apiKey}`,
-      { next: { revalidate: 900 } }
-    )
-
-    let hourly = DEMO_WEATHER.hourly
-    if (forecastResponse.ok) {
-      const forecastData = await forecastResponse.json()
-      hourly = forecastData.list.map((item: any) => {
-        const date = new Date(item.dt * 1000)
-        return {
-          time: date.toLocaleTimeString('en-US', { hour: 'numeric', hour12: true }),
-          temp: Math.round(item.main.temp),
-          icon: getWeatherIcon(item.weather[0].id, item.sys.pod === 'd'),
-        }
-      })
-    }
-
-    // Map OpenWeather data to our format
     const weather = {
-      location: 'Herriman, UT 84096',
+      location: loc.name,
       current: {
-        temp: Math.round(data.main.temp),
-        condition: data.weather[0].description,
-        icon: getWeatherIcon(data.weather[0].id, data.weather[0].icon.includes('d')),
-        humidity: data.main.humidity,
-        wind_speed: Math.round(data.wind.speed),
-        wind_direction: getWindDirection(data.wind.deg),
+        temp: Math.round(data.current.temperature_2m),
+        condition: getConditionText(currentCode),
+        icon: getWeatherIcon(currentCode, isDay),
+        high: Math.round(data.daily.temperature_2m_max[0]),
+        low: Math.round(data.daily.temperature_2m_min[0]),
       },
       hourly,
     }
@@ -81,26 +88,49 @@ export async function GET() {
     return NextResponse.json(weather)
   } catch (error) {
     console.error('Weather fetch error:', error)
-    return NextResponse.json(DEMO_WEATHER)
+    // Return fallback
+    return NextResponse.json({
+      location: loc.name,
+      current: {
+        temp: 32,
+        condition: 'Unknown',
+        icon: '🌡️',
+        high: 38,
+        low: 25,
+      },
+      hourly: [],
+    })
   }
 }
 
-// Convert wind degrees to direction
-function getWindDirection(deg: number): string {
-  const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
-  const index = Math.round(deg / 45) % 8
-  return directions[index]
-}
+// Endpoint to get weather for multiple locations (for rotation)
+export async function POST(request: Request) {
+  try {
+    const { locations } = await request.json()
 
-// Map OpenWeather condition codes to emoji icons
-function getWeatherIcon(code: number, isDay: boolean): string {
-  if (code >= 200 && code < 300) return '⛈️' // Thunderstorm
-  if (code >= 300 && code < 400) return '🌧️' // Drizzle
-  if (code >= 500 && code < 600) return '🌧️' // Rain
-  if (code >= 600 && code < 700) return '❄️' // Snow
-  if (code >= 700 && code < 800) return '🌫️' // Atmosphere
-  if (code === 800) return isDay ? '☀️' : '🌙' // Clear
-  if (code === 801) return isDay ? '🌤️' : '🌙' // Few clouds
-  if (code >= 802 && code < 900) return '☁️' // Cloudy
-  return '🌡️'
+    const results = await Promise.all(
+      (locations || ['herriman']).map(async (loc: string) => {
+        const location = LOCATIONS[loc as keyof typeof LOCATIONS]
+        if (!location) return null
+
+        try {
+          const data = await fetchWeatherForLocation(location.lat, location.lon)
+          const isDay = data.current.is_day === 1
+          return {
+            id: loc,
+            location: location.name,
+            temp: Math.round(data.current.temperature_2m),
+            condition: getConditionText(data.current.weather_code),
+            icon: getWeatherIcon(data.current.weather_code, isDay),
+          }
+        } catch {
+          return null
+        }
+      })
+    )
+
+    return NextResponse.json({ locations: results.filter(Boolean) })
+  } catch {
+    return NextResponse.json({ locations: [] })
+  }
 }
